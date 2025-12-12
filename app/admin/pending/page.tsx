@@ -7,7 +7,7 @@ export default async function AdminPage() {
     .from('climbs')
     .select(`
       *,
-      boulders (*),
+      crags (*),
       profiles:users (*)
     `)
     .eq('status', 'pending')

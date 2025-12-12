@@ -45,32 +45,32 @@ export default function NameRoutesForm({ sessionId }: { sessionId: string }) {
 
       if (!user) throw new Error('Not authenticated')
 
-      // First, check if boulder exists or create it
-      let { data: boulder } = await supabase
-        .from('boulders')
+      // First, check if crag exists or create it
+      let { data: crag } = await supabase
+        .from('crags')
         .select('id')
         .eq('latitude', routeData.latitude)
         .eq('longitude', routeData.longitude)
         .single()
 
-      if (!boulder) {
-        const { data: newBoulder, error } = await supabase
-          .from('boulders')
+      if (!crag) {
+        const { data: newCrag, error } = await supabase
+          .from('crags')
           .insert({
             latitude: routeData.latitude,
             longitude: routeData.longitude,
-            name: `Boulder at ${routeData.latitude.toFixed(4)}, ${routeData.longitude.toFixed(4)}`
+            name: `Crag at ${routeData.latitude.toFixed(4)}, ${routeData.longitude.toFixed(4)}`
           })
           .select('id')
           .single()
 
         if (error) throw error
-        boulder = newBoulder
+        crag = newCrag
       }
 
       // Create climbs
       const climbs = forms.map((form, index) => ({
-        boulder_id: boulder.id,
+        crag_id: crag.id,
         name: form.name,
         grade: form.grade,
         description: form.description,

@@ -10,7 +10,7 @@ interface Climb {
   description: string
   image_url: string
   coordinates: any
-  boulders: { name: string }
+  crags: { name: string }
   profiles: { email: string }
 }
 
@@ -74,7 +74,7 @@ export default function PendingClimbs({ initialClimbs }: PendingClimbsProps) {
             <div>
               <h3 className="text-xl font-semibold">{climb.name}</h3>
               <p className="text-gray-600">Grade: {climb.grade}</p>
-              <p className="text-gray-600">Boulder: {climb.boulders.name}</p>
+              <p className="text-gray-600">Crag: {climb.crags.name}</p>
               <p className="text-gray-600">Submitted by: {climb.profiles.email}</p>
             </div>
             <div className="flex gap-2">
