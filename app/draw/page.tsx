@@ -1,16 +1,17 @@
 import RouteCanvas from './components/RouteCanvas'
 
 interface DrawPageProps {
-  searchParams: {
+  searchParams: Promise<{
     imageUrl: string
     lat: string
     lng: string
     sessionId: string
-  }
+  }>
 }
 
-export default function DrawPage({ searchParams }: DrawPageProps) {
-  const { imageUrl, lat, lng, sessionId } = searchParams
+export default async function DrawPage({ searchParams }: DrawPageProps) {
+  const params = await searchParams
+  const { imageUrl, lat, lng, sessionId } = params
 
   if (!imageUrl) {
     return <div>Invalid session. Please start from upload.</div>
