@@ -39,11 +39,13 @@ export default function UploadForm() {
         return
       }
 
-      // Extract GPS
-      const gpsResponse = await fetch('/api/extract-gps', {
-        method: 'POST',
-        body: file
-      })
+       // Extract GPS
+       const formData = new FormData()
+       formData.append('file', file)
+       const gpsResponse = await fetch('/api/extract-gps', {
+         method: 'POST',
+         body: formData
+       })
 
       if (!gpsResponse.ok) {
         throw new Error('Failed to extract GPS data')
