@@ -44,8 +44,6 @@ export default function SatelliteClimbingMap() {
 
      const fetchClimbs = async () => {
        try {
-         console.log('SUPABASE_URL defined:', !!process.env.NEXT_PUBLIC_SUPABASE_URL)
-         console.log('SUPABASE_ANON_KEY defined:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
          const supabase = createClient()
          const { data, error } = await supabase
            .from('climbs')
@@ -56,7 +54,7 @@ export default function SatelliteClimbingMap() {
            .eq('status', 'approved')
 
          if (error) {
-           console.error('Error fetching climbs:', error, 'URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+           console.error('Error fetching climbs:', error)
          } else {
            setClimbs((data || []) as unknown as Climb[])
          }
