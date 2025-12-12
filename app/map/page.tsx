@@ -9,7 +9,7 @@ const SatelliteClimbingMap = dynamic(() => import('@/components/SatelliteClimbin
 
 export default function MapPage() {
   return (
-    <div className="h-screen w-full">
+    <div className="fixed inset-0">
       <SatelliteClimbingMap />
     </div>
   )
