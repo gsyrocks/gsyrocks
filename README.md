@@ -1,6 +1,6 @@
-# 🧗 Climbing App
+# 🧗 gsyrocks - Guernsey Climbing App
 
-A modern web app for climbers to discover, log, and share climbing routes with tide-based visualization.
+A modern web app for climbers to discover, log, and share climbing routes in Guernsey with interactive satellite maps.
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
