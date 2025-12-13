@@ -50,3 +50,4 @@ Couldn't load zlib
 Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
  GET /map 200 in 106ms (compile: 28ms, proxy.ts: 18ms, render: 59ms)
  ✓ Compiled in 99ms
+[?25h

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase'
+import Image from 'next/image'
 import L from 'leaflet'
 
 // Import Leaflet CSS
@@ -113,7 +114,15 @@ export default function SatelliteClimbingMap() {
       </MapContainer>
       {selectedClimb && (
         <div className="fixed inset-0 bg-black bg-opacity-75 z-20">
-          <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-cover" onError={(e) => console.log('Image failed to load:', selectedClimb.image_url)} />
+          <div className="relative w-full h-full">
+            <Image
+              src={selectedClimb.image_url}
+              alt={selectedClimb.name}
+              fill
+              style={{ objectFit: 'cover' }}
+              onError={() => console.log('Image failed to load:', selectedClimb.image_url)}
+            />
+          </div>
           <div className="absolute bottom-0 left-0 right-0 bg-white p-4">
             <h3 className="text-lg font-semibold">{selectedClimb.name}</h3>
             <p className="text-gray-600">Grade: {selectedClimb.grade}</p>
