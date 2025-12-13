@@ -34,6 +34,7 @@ export default function SatelliteClimbingMap() {
   const [climbs, setClimbs] = useState<Climb[]>([])
   const [loading, setLoading] = useState(true)
   const [isClient, setIsClient] = useState(false)
+  const [selectedClimb, setSelectedClimb] = useState<Climb | null>(null)
 
   useEffect(() => {
     setIsClient(true)
@@ -96,28 +97,24 @@ export default function SatelliteClimbingMap() {
           <Marker
             key={climb.id}
             position={[climb.crags.latitude, climb.crags.longitude]}
-          >
-            <Popup>
-              <div className="max-w-xs">
-                <img
-                  src={climb.image_url}
-                  alt={climb.name}
-                  className="w-full h-32 object-cover rounded mb-2"
-                />
-                <h3 className="font-semibold text-lg">{climb.name}</h3>
-                <p className="text-gray-600">Grade: {climb.grade}</p>
-                <p className="text-gray-600">Location: {climb.crags.name}</p>
-                <a
-                  href={`/climbs/${climb.id}`}
-                  className="text-blue-500 hover:text-blue-700 underline mt-2 inline-block"
-                >
-                  View Details
-                </a>
-              </div>
-            </Popup>
-          </Marker>
+            eventHandlers={{
+              click: () => setSelectedClimb(climb)
+            }}
+          />
         ))}
       </MapContainer>
+      {selectedClimb && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-20">
+          <div className="relative w-full h-full">
+            <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-contain" />
+            <div className="absolute bottom-0 left-0 right-0 bg-white p-4">
+              <h3 className="text-lg font-semibold">{selectedClimb.name}</h3>
+              <p className="text-gray-600">Grade: {selectedClimb.grade}</p>
+            </div>
+            <button onClick={() => setSelectedClimb(null)} className="absolute top-4 right-4 text-white bg-black bg-opacity-50 rounded-full p-2">X</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

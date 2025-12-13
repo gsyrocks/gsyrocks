@@ -37,6 +37,9 @@ export default function Header() {
           gsyrocks
         </Link>
         <nav className="flex items-center space-x-4">
+          <Link href="/map" className="text-gray-600 hover:text-gray-900">
+            Map
+          </Link>
           <Link href="/upload" className="text-gray-600 hover:text-gray-900">
             Upload Route
           </Link>
