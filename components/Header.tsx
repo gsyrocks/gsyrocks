@@ -33,8 +33,8 @@ export default function Header() {
   return (
     <header className="bg-white shadow">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <Link href="/" className="text-2xl font-bold text-gray-900">
-          gsyrocks
+        <Link href="/" className="flex items-center">
+          <img src="/logo.png" alt="gsyrocks" className="h-8 w-auto" />
         </Link>
         <nav className="flex items-center space-x-4">
           <Link href="/map" className="text-gray-600 hover:text-gray-900">
