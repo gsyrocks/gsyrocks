@@ -96,8 +96,9 @@ export default function SatelliteClimbingMap() {
           <Marker
             key={climb.id}
             position={[climb.crags.latitude, climb.crags.longitude]}
+            interactive={true}
             eventHandlers={{
-              click: (e) => {
+              click: () => {
                 console.log('Marker clicked', climb)
                 setSelectedClimb(climb)
               }
