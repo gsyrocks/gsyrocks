@@ -32,14 +32,11 @@ export default function Header() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-10 bg-white shadow">
-      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <Link href="/" className="flex items-center">
-          <img src="/logo.png" alt="gsyrocks" className="h-8 w-auto" />
+      <div className="container mx-auto px-4 py-2 flex justify-between items-center">
+        <Link href="/" className="text-2xl font-bold text-gray-900">
+          gsyrocks
         </Link>
         <nav className="flex items-center space-x-4">
-          <Link href="/map" className="text-gray-600 hover:text-gray-900">
-            Map
-          </Link>
           <Link href="/upload" className="text-gray-600 hover:text-gray-900">
             Upload Route
           </Link>
