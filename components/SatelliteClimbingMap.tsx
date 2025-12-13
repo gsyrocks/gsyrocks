@@ -97,21 +97,22 @@ export default function SatelliteClimbingMap() {
             key={climb.id}
             position={[climb.crags.latitude, climb.crags.longitude]}
             eventHandlers={{
-              click: () => setSelectedClimb(climb),
+              click: () => {
+                console.log('Marker clicked for climb:', climb.name);
+                setSelectedClimb(climb);
+              },
             }}
           />
         ))}
       </MapContainer>
       {selectedClimb && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-20">
-          <div className="relative w-full h-full">
-            <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-contain" />
-            <div className="absolute bottom-0 left-0 right-0 bg-white p-4">
-              <h3 className="text-lg font-semibold">{selectedClimb.name}</h3>
-              <p className="text-gray-600">Grade: {selectedClimb.grade}</p>
-            </div>
-            <button onClick={() => setSelectedClimb(null)} className="absolute top-4 right-4 text-white bg-black bg-opacity-50 rounded-full p-2">X</button>
+        <div className="fixed inset-0 bg-black bg-opacity-75 z-20">
+          <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-cover" />
+          <div className="absolute bottom-0 left-0 right-0 bg-white p-4">
+            <h3 className="text-lg font-semibold">{selectedClimb.name}</h3>
+            <p className="text-gray-600">Grade: {selectedClimb.grade}</p>
           </div>
+          <button onClick={() => setSelectedClimb(null)} className="absolute top-4 right-4 text-white bg-black bg-opacity-50 rounded-full p-2">X</button>
         </div>
       )}
     </div>
