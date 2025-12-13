@@ -43,29 +43,35 @@ export default function SatelliteClimbingMap() {
     if (!isClient) return
 
      const fetchClimbs = async () => {
-       try {
-         const supabase = createClient()
-         const { data, error } = await supabase
-           .from('climbs')
-           .select(`
-             id, name, grade, image_url,
-             crags (name, latitude, longitude)
-           `)
-           .eq('status', 'approved')
+        try {
+          const supabase = createClient()
+          const { data, error } = await supabase
+            .from('climbs')
+            .select(`
+              id, name, grade, image_url,
+              crags (name, latitude, longitude)
+            `)
+            .eq('status', 'approved')
 
-         if (error) {
-           console.error('Error fetching climbs:', error)
-         } else {
-           setClimbs((data || []) as unknown as Climb[])
-         }
-      } catch (err) {
-        console.error('Network error fetching climbs:', err)
-      }
-      setLoading(false)
-    }
+          if (error) {
+            console.error('Error fetching climbs:', error)
+          } else {
+            setClimbs((data || []) as unknown as Climb[])
+          }
+       } catch (err) {
+         console.error('Network error fetching climbs:', err)
+       }
+       setLoading(false)
+     }
 
-    fetchClimbs()
-  }, [isClient])
+     fetchClimbs()
+   }, [isClient])
+
+   useEffect(() => {
+     if (selectedClimb) {
+       console.log('selectedClimb set to:', selectedClimb.name, 'image_url:', selectedClimb.image_url)
+     }
+   }, [selectedClimb])
 
   if (!isClient || loading) {
     return <div className="h-screen w-full flex items-center justify-center">Loading satellite map...</div>
@@ -98,7 +104,7 @@ export default function SatelliteClimbingMap() {
             position={[climb.crags.latitude, climb.crags.longitude]}
             eventHandlers={{
               click: () => {
-                console.log('Marker clicked for climb:', climb.name);
+                console.log('Marker clicked for climb:', climb.name, 'image_url:', climb.image_url);
                 setSelectedClimb(climb);
               },
             }}
@@ -107,7 +113,7 @@ export default function SatelliteClimbingMap() {
       </MapContainer>
       {selectedClimb && (
         <div className="fixed inset-0 bg-black bg-opacity-75 z-20">
-          <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-cover" />
+          <img src={selectedClimb.image_url} alt={selectedClimb.name} className="w-full h-full object-cover" onError={(e) => console.log('Image failed to load:', selectedClimb.image_url)} />
           <div className="absolute bottom-0 left-0 right-0 bg-white p-4">
             <h3 className="text-lg font-semibold">{selectedClimb.name}</h3>
             <p className="text-gray-600">Grade: {selectedClimb.grade}</p>
