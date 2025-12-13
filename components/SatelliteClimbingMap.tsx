@@ -20,7 +20,6 @@ L.Icon.Default.mergeOptions({
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false })
 const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false })
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false })
-const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), { ssr: false })
 
 interface Climb {
   id: string
@@ -98,7 +97,10 @@ export default function SatelliteClimbingMap() {
             key={climb.id}
             position={[climb.crags.latitude, climb.crags.longitude]}
             eventHandlers={{
-              click: () => setSelectedClimb(climb)
+              click: (e) => {
+                console.log('Marker clicked', climb)
+                setSelectedClimb(climb)
+              }
             }}
           />
         ))}
