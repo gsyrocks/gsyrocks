@@ -3,27 +3,39 @@
 import { useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import type { SubmissionStep, Region, Crag, ImageSelection, NewRouteData, SubmissionContext } from '@/lib/submission-types'
+import type { SubmissionStep, Region, Crag, ImageSelection, NewRouteData, SubmissionContext, GpsData } from '@/lib/submission-types'
 import RegionSelector from './components/RegionSelector'
 import CragSelector from './components/CragSelector'
 import ImagePicker from './components/ImagePicker'
 import RouteCanvas from './components/RouteCanvas'
 
 export default function SubmitPage() {
-  const [step, setStep] = useState<SubmissionStep>({ step: 'region' })
+  const [step, setStep] = useState<SubmissionStep>({ step: 'image' })
   const [context, setContext] = useState<SubmissionContext>({
     region: null,
     crag: null,
     image: null,
+    imageGps: null,
     routes: []
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const handleImageSelect = useCallback((selection: ImageSelection, gpsData: GpsData | null) => {
+    const gps = gpsData ? { latitude: gpsData.latitude, longitude: gpsData.longitude } : null
+    setContext(prev => ({ ...prev, image: selection, imageGps: gps }))
+    setStep({ step: 'region', imageGps: gps })
+  }, [])
+
   const handleRegionSelect = useCallback((region: Region) => {
     setContext(prev => ({ ...prev, region: { id: region.id, name: region.name } }))
-    setStep({ step: 'crag', regionId: region.id, regionName: region.name })
-  }, [])
+    setStep({ 
+      step: 'crag', 
+      imageGps: context.imageGps,
+      regionId: region.id, 
+      regionName: region.name 
+    })
+  }, [context.imageGps])
 
   const handleCragSelect = useCallback((crag: Crag) => {
     setContext(prev => ({ 
@@ -31,25 +43,15 @@ export default function SubmitPage() {
       crag: { id: crag.id, name: crag.name, latitude: crag.latitude, longitude: crag.longitude }
     }))
     setStep({ 
-      step: 'image', 
+      step: 'draw', 
+      imageGps: context.imageGps,
       regionId: context.region!.id, 
       regionName: context.region!.name,
       cragId: crag.id, 
-      cragName: crag.name 
+      cragName: crag.name,
+      image: context.image!
     })
-  }, [context.region])
-
-  const handleImageSelect = useCallback((selection: ImageSelection) => {
-    setContext(prev => ({ ...prev, image: selection }))
-    setStep({
-      step: 'draw',
-      regionId: context.region!.id,
-      regionName: context.region!.name,
-      cragId: context.crag!.id,
-      cragName: context.crag!.name,
-      image: selection
-    })
-  }, [context.region, context.crag])
+  }, [context.region, context.imageGps, context.image])
 
   const handleRoutesUpdate = useCallback((routes: NewRouteData[]) => {
     setContext(prev => ({ ...prev, routes }))
@@ -63,6 +65,7 @@ export default function SubmitPage() {
     setError(null)
     setStep({
       step: 'review',
+      imageGps: context.imageGps,
       regionId: context.region!.id,
       regionName: context.region!.name,
       cragId: context.crag!.id,
@@ -142,21 +145,21 @@ export default function SubmitPage() {
 
   const handleBack = () => {
     setError(null)
-    if (step.step === 'crag') {
-      setStep({ step: 'region' })
-    } else if (step.step === 'image') {
-      setStep({ step: 'crag', regionId: context.region!.id, regionName: context.region!.name })
+    if (step.step === 'region') {
+      setStep({ step: 'image' })
+    } else if (step.step === 'crag') {
+      setStep({ step: 'region', imageGps: context.imageGps })
     } else if (step.step === 'draw') {
       setStep({ 
-        step: 'image', 
+        step: 'crag', 
+        imageGps: context.imageGps,
         regionId: context.region!.id, 
-        regionName: context.region!.name,
-        cragId: context.crag!.id, 
-        cragName: context.crag!.name 
+        regionName: context.region!.name 
       })
     } else if (step.step === 'review') {
       setStep({
         step: 'draw',
+        imageGps: context.imageGps,
         regionId: context.region!.id,
         regionName: context.region!.name,
         cragId: context.crag!.id,
@@ -167,21 +170,52 @@ export default function SubmitPage() {
   }
 
   const handleStartOver = () => {
-    setContext({ region: null, crag: null, image: null, routes: [] })
-    setStep({ step: 'region' })
+    setContext({ region: null, crag: null, image: null, imageGps: null, routes: [] })
+    setStep({ step: 'image' })
     setError(null)
   }
 
   const renderStep = () => {
     switch (step.step) {
+      case 'image':
+        return (
+          <div className="max-w-md mx-auto">
+            <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Upload Route Photo</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Upload a photo of the route to begin. GPS location will be extracted to help find the crag.
+            </p>
+            <ImagePicker
+              onSelect={(selection, gpsData) => handleImageSelect(selection, gpsData)}
+              showBackButton={false}
+            />
+          </div>
+        )
+
       case 'region':
         return (
           <div className="max-w-md mx-auto">
+            <button
+              onClick={handleBack}
+              className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 mb-4 flex items-center gap-1"
+            >
+              ← Back to image
+            </button>
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Select a Region</h2>
+            {step.imageGps && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  📍 Location detected from image
+                </p>
+              </div>
+            )}
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Start by selecting the region where your climb is located.
+              Select the region where your climb is located.
             </p>
-            <RegionSelector onSelect={handleRegionSelect} />
+            <RegionSelector 
+              onSelect={handleRegionSelect}
+              initialLat={step.imageGps?.latitude ?? null}
+              initialLng={step.imageGps?.longitude ?? null}
+            />
           </div>
         )
 
@@ -197,8 +231,8 @@ export default function SubmitPage() {
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Select a Crag</h2>
             <CragSelector
               region={{ id: step.regionId, name: step.regionName, country_code: null, center_lat: null, center_lon: null, created_at: '' }}
-              latitude={0}
-              longitude={0}
+              latitude={step.imageGps?.latitude ?? 0}
+              longitude={step.imageGps?.longitude ?? 0}
               onSelect={handleCragSelect}
             />
           </div>
@@ -217,7 +251,13 @@ export default function SubmitPage() {
             <ImagePicker
               cragId={step.cragId}
               cragName={step.cragName}
-              onSelect={handleImageSelect}
+              onSelect={(selection) => {
+                const gps = selection.mode === 'new' && selection.gpsData 
+                  ? selection.gpsData 
+                  : null
+                handleImageSelect(selection, gps)
+              }}
+              showBackButton={true}
             />
           </div>
         )
@@ -230,7 +270,7 @@ export default function SubmitPage() {
               onClick={handleBack}
               className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 mb-4 flex items-center gap-1"
             >
-              ← Back to image
+              ← Back to crag
             </button>
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Draw Your Routes</h2>
             <div className="h-[calc(100%-80px)]">

@@ -1,3 +1,5 @@
+import type { Polygon } from 'geojson'
+
 export const VALID_GRADES = [
   '5A', '5A+', '5B', '5B+', '5C', '5C+',
   '6A', '6A+', '6B', '6B+', '6C', '6C+',
@@ -27,6 +29,7 @@ export interface Crag {
   access_notes: string | null
   rock_type: string | null
   type: 'sport' | 'boulder' | 'trad' | 'mixed'
+  boundary: Polygon | null
   created_at: string
 }
 
@@ -109,15 +112,16 @@ export interface SubmissionContext {
   region: { id: string; name: string } | null
   crag: { id: string; name: string; latitude: number; longitude: number } | null
   image: ImageSelection | null
+  imageGps: { latitude: number; longitude: number } | null
   routes: NewRouteData[]
 }
 
 export type SubmissionStep =
-  | { step: 'region' }
-  | { step: 'crag'; regionId: string; regionName: string }
-  | { step: 'image'; regionId: string; regionName: string; cragId: string; cragName: string }
-  | { step: 'draw'; regionId: string; regionName: string; cragId: string; cragName: string; image: ImageSelection }
-  | { step: 'review'; regionId: string; regionName: string; cragId: string; cragName: string; image: ImageSelection; routes: NewRouteData[] }
+  | { step: 'image' }
+  | { step: 'region'; imageGps: { latitude: number; longitude: number } | null }
+  | { step: 'crag'; imageGps: { latitude: number; longitude: number } | null; regionId: string; regionName: string }
+  | { step: 'draw'; imageGps: { latitude: number; longitude: number } | null; regionId: string; regionName: string; cragId: string; cragName: string; image: ImageSelection }
+  | { step: 'review'; imageGps: { latitude: number; longitude: number } | null; regionId: string; regionName: string; cragId: string; cragName: string; image: ImageSelection; routes: NewRouteData[] }
   | { step: 'submitting' }
   | { step: 'success'; climbsCreated: number }
   | { step: 'error'; message: string }

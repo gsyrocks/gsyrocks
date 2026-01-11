@@ -1,18 +1,28 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+import 'leaflet/dist/leaflet.css'
 import type { Region } from '@/lib/submission-types'
+
+const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false })
+const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false })
+const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false })
 
 interface RegionSelectorProps {
   onSelect: (region: Region) => void
   onCreateNew?: (name: string, countryCode?: string) => void
   selectedRegionId?: string | null
+  initialLat?: number | null
+  initialLng?: number | null
 }
 
 export default function RegionSelector({
   onSelect,
   onCreateNew,
-  selectedRegionId
+  selectedRegionId,
+  initialLat,
+  initialLng
 }: RegionSelectorProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Region[]>([])
@@ -23,6 +33,7 @@ export default function RegionSelector({
   const [isCreating, setIsCreating] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [leaflet, setLeaflet] = useState<typeof import('leaflet') | null>(null)
 
   const searchRegions = useCallback(async (searchQuery: string) => {
     if (searchQuery.length < 2) {
@@ -128,17 +139,52 @@ export default function RegionSelector({
     setErrorMessage('')
   }
 
+  useEffect(() => {
+    import('leaflet').then(L => {
+      setLeaflet(L)
+    })
+  }, [])
+
   const handleShowCreate = () => {
     setShowCreate(true)
     setErrorMessage('')
     setSuccessMessage('')
   }
 
+  const hasGps = initialLat !== null && initialLng !== null && !isNaN(initialLat) && !isNaN(initialLng)
+
   return (
     <div className="region-selector">
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
         Region
       </label>
+
+      {hasGps && (
+        <div className="mb-4 h-40 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+          <MapContainer
+            center={[initialLat, initialLng]}
+            zoom={10}
+            style={{ height: '100%', width: '100%' }}
+            dragging={false}
+            zoomControl={false}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            {leaflet && (
+              <Marker
+                position={[initialLat, initialLng]}
+                icon={leaflet.divIcon({
+                  className: 'gps-marker',
+                  iconSize: [12, 12],
+                  iconAnchor: [6, 6]
+                })}
+              />
+            )}
+          </MapContainer>
+        </div>
+      )}
 
       {successMessage && (
         <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700">
@@ -265,6 +311,14 @@ export default function RegionSelector({
           </button>
         </>
       )}
+      <style jsx global>{`
+        .gps-marker {
+          background: #3b82f6;
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+      `}</style>
     </div>
   )
 }

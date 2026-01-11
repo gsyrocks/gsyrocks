@@ -1,8 +1,26 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+import 'leaflet/dist/leaflet.css'
 import type { Crag, Region } from '@/lib/submission-types'
 import LocationPickerModal from './LocationPickerModal'
+
+const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false })
+const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false })
+const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false })
+const Circle = dynamic(() => import('react-leaflet').then(mod => mod.Circle), { ssr: false })
+
+interface NearbyCrag {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  rock_type: string | null
+  type: string
+  distance_km: number
+  contains_point: boolean
+}
 
 interface CragSelectorProps {
   region: Region
@@ -33,6 +51,45 @@ export default function CragSelector({
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [nearbyCrags, setNearbyCrags] = useState<NearbyCrag[]>([])
+  const [loadingNearby, setLoadingNearby] = useState(false)
+  const [leaflet, setLeaflet] = useState<typeof import('leaflet') | null>(null)
+
+  useEffect(() => {
+    import('leaflet').then(L => {
+      setLeaflet(L)
+    })
+  }, [])
+
+  const hasGps = latitude !== 0 && longitude !== 0 && !isNaN(latitude) && !isNaN(longitude)
+
+  const loadNearbyCrags = useCallback(async () => {
+    if (!hasGps) return
+
+    setLoadingNearby(true)
+    try {
+      const params = new URLSearchParams({
+        lat: latitude.toString(),
+        lng: longitude.toString(),
+        radius_km: '10'
+      })
+      const response = await fetch(`/api/crags/by-location?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setNearbyCrags(data)
+      }
+    } catch (error) {
+      console.error('Error loading nearby crags:', error)
+    } finally {
+      setLoadingNearby(false)
+    }
+  }, [hasGps, latitude, longitude])
+
+  useEffect(() => {
+    if (hasGps && !showCreate) {
+      loadNearbyCrags()
+    }
+  }, [hasGps, showCreate, loadNearbyCrags])
 
   const searchCrags = useCallback(async (searchQuery: string) => {
     if (searchQuery.length < 2) {
@@ -81,6 +138,23 @@ export default function CragSelector({
     setSuccessMessage('')
     setErrorMessage('')
     onSelect(crag)
+  }
+
+  const handleSelectNearby = (crag: NearbyCrag) => {
+    const fullCrag: Crag = {
+      id: crag.id,
+      name: crag.name,
+      latitude: crag.latitude,
+      longitude: crag.longitude,
+      region_id: null,
+      description: null,
+      access_notes: null,
+      rock_type: crag.rock_type,
+      type: crag.type as 'sport' | 'boulder' | 'trad' | 'mixed',
+      boundary: null,
+      created_at: ''
+    }
+    handleSelect(fullCrag)
   }
 
   const handleCreate = async () => {
@@ -196,6 +270,98 @@ export default function CragSelector({
       {errorMessage && (
         <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {errorMessage}
+        </div>
+      )}
+
+      {hasGps && !showCreate && (
+        <div className="mb-4">
+          <div className="h-48 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            <MapContainer
+              center={[latitude, longitude]}
+              zoom={12}
+              style={{ height: '100%', width: '100%' }}
+              dragging={false}
+              zoomControl={false}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {leaflet && (
+                <>
+                  <Marker
+                    position={[latitude, longitude]}
+                    icon={leaflet.divIcon({
+                      className: 'gps-marker',
+                      iconSize: [16, 16],
+                      iconAnchor: [8, 8]
+                    })}
+                  />
+                  <Circle
+                    center={[latitude, longitude]}
+                    radius={1000}
+                    pathOptions={{
+                      color: '#3b82f6',
+                      fillColor: '#3b82f6',
+                      fillOpacity: 0.1,
+                      weight: 1
+                    }}
+                  />
+                  {nearbyCrags.filter(c => c.distance_km <= 10).slice(0, 20).map((crag) => (
+                    <Marker
+                      key={crag.id}
+                      position={[crag.latitude, crag.longitude]}
+                      icon={leaflet.divIcon({
+                        className: 'crag-marker',
+                        iconSize: crag.contains_point ? [20, 20] : [12, 12],
+                        iconAnchor: crag.contains_point ? [10, 10] : [6, 6]
+                      })}
+                    />
+                  ))}
+                </>
+              )}
+            </MapContainer>
+          </div>
+
+          {loadingNearby ? (
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Loading nearby crags...
+            </div>
+          ) : nearbyCrags.length > 0 ? (
+            <div className="mt-2">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                {nearbyCrags.length} crag{nearbyCrags.length !== 1 ? 's' : ''} within 10km
+              </p>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {nearbyCrags.map((crag) => (
+                  <button
+                    key={crag.id}
+                    onClick={() => handleSelectNearby(crag)}
+                    className={`w-full text-left px-3 py-2 rounded text-sm ${
+                      selectedCragId === crag.id
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{crag.name}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {crag.distance_km.toFixed(1)} km
+                        {crag.contains_point && ' ✓'}
+                      </span>
+                    </div>
+                    {crag.rock_type && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{crag.rock_type}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              No crags found nearby
+            </div>
+          )}
         </div>
       )}
 
@@ -326,8 +492,8 @@ export default function CragSelector({
 
       {showLocationPicker && (
         <LocationPickerModal
-          initialLat={parseFloat(newCragLat) || null}
-          initialLng={parseFloat(newCragLng) || null}
+          initialLat={parseFloat(newCragLat) || (latitude && latitude !== 0 ? latitude : null)}
+          initialLng={parseFloat(newCragLng) || (longitude && longitude !== 0 ? longitude : null)}
           onSelect={(lat, lng) => {
             setNewCragLat(lat.toFixed(6))
             setNewCragLng(lng.toFixed(6))
@@ -336,6 +502,21 @@ export default function CragSelector({
           onClose={() => setShowLocationPicker(false)}
         />
       )}
+
+      <style jsx global>{`
+        .gps-marker {
+          background: #3b82f6;
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .crag-marker {
+          background: #ef4444;
+          border: 2px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+      `}</style>
     </div>
   )
 }

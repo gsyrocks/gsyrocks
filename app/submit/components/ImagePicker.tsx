@@ -6,13 +6,14 @@ import type { Image, ImageSelection, ExistingImageSelection, NewImageSelection, 
 import ImageUploader from './ImageUploader'
 
 interface ImagePickerProps {
-  cragId: string
-  cragName: string
-  onSelect: (selection: ImageSelection) => void
+  cragId?: string
+  cragName?: string
+  onSelect: (selection: ImageSelection, gpsData: GpsData | null) => void
+  showBackButton?: boolean
 }
 
-export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerProps) {
-  const [activeTab, setActiveTab] = useState<'existing' | 'new'>('existing')
+export default function ImagePicker({ cragId, cragName, onSelect, showBackButton = false }: ImagePickerProps) {
+  const [activeTab, setActiveTab] = useState<'existing' | 'new'>('new')
   const [existingImages, setExistingImages] = useState<Image[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -22,6 +23,7 @@ export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerP
   const [uploadedImage, setUploadedImage] = useState<NewImageSelection | null>(null)
 
   const loadExistingImages = useCallback(async () => {
+    if (!cragId) return
     setLoading(true)
     setError(null)
     try {
@@ -59,7 +61,7 @@ export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerP
           imageId: image.id,
           imageUrl: image.url
         }
-        onSelect(selection)
+        onSelect(selection, null)
       } else {
         setError('Failed to load image details')
       }
@@ -76,7 +78,7 @@ export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerP
     setProgress(0)
     setCurrentStep('')
     setUploadedImage(result)
-    onSelect(result)
+    onSelect(result, result.gpsData)
   }
 
   const handleUploadError = (err: string) => {
@@ -91,21 +93,25 @@ export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerP
 
   return (
     <div className="image-picker">
-      <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-        Images at <span className="font-medium text-gray-900 dark:text-gray-100">{cragName}</span>
-      </div>
+      {cragName && (
+        <div className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Images at <span className="font-medium text-gray-900 dark:text-gray-100">{cragName}</span>
+        </div>
+      )}
 
       <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
-        <button
-          onClick={() => handleTabChange('existing')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === 'existing'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
-          }`}
-        >
-          Existing Images
-        </button>
+        {cragId && (
+          <button
+            onClick={() => handleTabChange('existing')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === 'existing'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+            }`}
+          >
+            Existing Images
+          </button>
+        )}
         <button
           onClick={() => handleTabChange('new')}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -124,7 +130,7 @@ export default function ImagePicker({ cragId, cragName, onSelect }: ImagePickerP
         </div>
       )}
 
-      {activeTab === 'existing' && (
+      {activeTab === 'existing' && cragId && (
         <div className="existing-images">
           {loading ? (
             <div className="flex items-center justify-center py-8">
