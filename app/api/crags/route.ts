@@ -2,24 +2,30 @@ import { NextRequest, NextResponse } from 'next/server'
 
 interface CreateCragRequest {
   name: string
-  latitude: number
-  longitude: number
   region_id?: string
   region_name?: string
   rock_type?: string
   type?: 'sport' | 'boulder' | 'trad' | 'mixed'
   description?: string
   access_notes?: string
+  boundary_vertices?: [number, number][]
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: CreateCragRequest = await request.json()
-    const { name, latitude, longitude, region_id, region_name, rock_type, type, description, access_notes } = body
+    const { name, region_id, region_name, rock_type, type, description, access_notes, boundary_vertices } = body
 
-    if (!name || !latitude || !longitude) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Name, latitude, and longitude are required' },
+        { error: 'Name is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!boundary_vertices || boundary_vertices.length < 3) {
+      return NextResponse.json(
+        { error: 'A valid crag boundary (at least 3 points) is required' },
         { status: 400 }
       )
     }
@@ -65,8 +71,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const checkResponse = await fetch(
-      `${supabaseUrl}/rest/v1/crags?select=id,name&latitude=eq.${latitude}&longitude=eq.${longitude}&limit=1`,
+    const checkNameResponse = await fetch(
+      `${supabaseUrl}/rest/v1/crags?select=id,name&name=ilike.${encodeURIComponent(name)}&limit=1`,
       {
         headers: {
           'Authorization': `Bearer ${supabaseKey}`,
@@ -75,20 +81,23 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    if (checkResponse.ok) {
-      const existingCrags = await checkResponse.json()
+    if (checkNameResponse.ok) {
+      const existingCrags = await checkNameResponse.json()
       if (existingCrags.length > 0) {
         return NextResponse.json(
           { 
-            error: `A crag already exists at these coordinates: "${existingCrags[0].name}"`,
+            error: `A crag with this name already exists: "${existingCrags[0].name}"`,
             existingCragId: existingCrags[0].id,
             existingCragName: existingCrags[0].name,
-            code: 'DUPLICATE'
+            code: 'DUPLICATE_NAME'
           },
           { status: 409 }
         )
       }
     }
+
+    const centerLat = boundary_vertices.reduce((sum, v) => sum + v[0], 0) / boundary_vertices.length
+    const centerLng = boundary_vertices.reduce((sum, v) => sum + v[1], 0) / boundary_vertices.length
 
     const response = await fetch(
       `${supabaseUrl}/rest/v1/crags`,
@@ -102,13 +111,14 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           name,
-          latitude,
-          longitude,
+          latitude: centerLat,
+          longitude: centerLng,
           region_id: resolvedRegionId || undefined,
           rock_type: rock_type || undefined,
           type: type || 'sport',
           description: description || undefined,
           access_notes: access_notes || undefined,
+          boundary: `POLYGON((${boundary_vertices.map(v => `${v[1]} ${v[0]}`).join(', ')}))`
         }),
       }
     )
@@ -144,11 +154,12 @@ export async function POST(request: NextRequest) {
     const createdCrag = {
       id: createdCragId,
       name,
-      latitude,
-      longitude,
+      latitude: centerLat,
+      longitude: centerLng,
       region_id: resolvedRegionId || null,
       rock_type: rock_type || null,
       type: type || 'sport',
+      boundary: boundary_vertices,
       created_at: new Date().toISOString(),
     }
 
