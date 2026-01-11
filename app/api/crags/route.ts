@@ -107,14 +107,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Create 5m circle polygon around point using PostGIS
-    const polygonWKT = `POLYGON((${
-      Array.from({ length: 9 }, (_, i) => {
-        const angle = (i / 8) * 2 * Math.PI
-        const dx = 5 * Math.cos(angle) / 111320 / Math.cos(latitude * Math.PI / 180)
-        const dy = 5 * Math.sin(angle) / 111320
-        return `${longitude + dx} ${latitude + dy}`
-      }).join(', ')
-    }, ${longitude} ${latitude}))`
+    // Generate 8 points around the center, then close back to first point
+    const angleStep = (2 * Math.PI) / 8
+    const polygonPoints: string[] = []
+    
+    for (let i = 0; i < 8; i++) {
+      const angle = i * angleStep
+      const dx = 5 * Math.cos(angle) / 111320 / Math.cos(latitude * Math.PI / 180)
+      const dy = 5 * Math.sin(angle) / 111320
+      polygonPoints.push(`${longitude + dx} ${latitude + dy}`)
+    }
+    
+    // Close the polygon by repeating the first point
+    polygonPoints.push(polygonPoints[0])
+    
+    const polygonWKT = `POLYGON((${polygonPoints.join(', ')}))`
 
     const response = await fetch(
       `${supabaseUrl}/rest/v1/crags`,
