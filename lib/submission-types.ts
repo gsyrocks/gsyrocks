@@ -30,7 +30,7 @@ export interface Crag {
   rock_type: string | null
   type: 'sport' | 'boulder' | 'trad' | 'mixed'
   boundary: GeoJSON.Polygon | null
-  radius_meters: number
+  radius_meters?: number
   created_at: string
 }
 

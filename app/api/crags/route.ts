@@ -135,8 +135,7 @@ export async function POST(request: NextRequest) {
           type: type || 'sport',
           description: description || undefined,
           access_notes: access_notes || undefined,
-          boundary: polygonWKT,
-          radius_meters: 5
+          boundary: polygonWKT
         }),
       }
     )

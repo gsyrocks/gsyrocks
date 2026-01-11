@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
             longitude: crag.longitude,
             rock_type: crag.rock_type,
             type: crag.type,
-            radius_meters: crag.radius_meters,
+            radius_meters: crag.radius_meters || 5,
             distanceMeters: Math.round(distance)
           },
           message: `Crag "${crag.name}" exists ${Math.round(distance)}m away`

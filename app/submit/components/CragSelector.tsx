@@ -10,18 +10,6 @@ const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLaye
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false })
 const Circle = dynamic(() => import('react-leaflet').then(mod => mod.Circle), { ssr: false })
 
-interface NearbyCrag {
-  id: string
-  name: string
-  latitude: number
-  longitude: number
-  rock_type: string | null
-  type: string
-  distance_km: number
-  radius_meters: number
-  boundary: GeoJSON.Polygon | null
-}
-
 interface ExistingCragMatch {
   exists: boolean
   crag: {
@@ -31,7 +19,7 @@ interface ExistingCragMatch {
     longitude: number
     rock_type: string | null
     type: string
-    radius_meters: number
+    radius_meters: number | null
     distanceMeters: number
   }
   message?: string
@@ -60,15 +48,17 @@ export default function CragSelector({
   const [showCreate, setShowCreate] = useState(false)
   const [newCragName, setNewCragName] = useState('')
   const [newCragRockType, setNewCragRockType] = useState('')
+  const [newCragLat, setNewCragLat] = useState('')
+  const [newCragLng, setNewCragLng] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-  const [nearbyCrags, setNearbyCrags] = useState<NearbyCrag[]>([])
+  const [nearbyCrags, setNearbyCrags] = useState<Crag[]>([])
   const [loadingNearby, setLoadingNearby] = useState(false)
-  const [leaflet, setLeaflet] = useState<typeof import('leaflet') | null>(null)
   const [existingMatch, setExistingMatch] = useState<ExistingCragMatch | null>(null)
   const [checkingTag, setCheckingTag] = useState(false)
   const [tagChecked, setTagChecked] = useState(false)
+  const [leaflet, setLeaflet] = useState<typeof import('leaflet') | null>(null)
 
   useEffect(() => {
     import('leaflet').then(L => {
@@ -84,11 +74,10 @@ export default function CragSelector({
     setLoadingNearby(true)
     try {
       const params = new URLSearchParams({
-        lat: latitude.toString(),
-        lng: longitude.toString(),
-        radius_km: '10'
+        q: '',
+        region_id: region.id
       })
-      const response = await fetch(`/api/crags/by-location?${params}`)
+      const response = await fetch(`/api/crags/search?${params}`)
       if (response.ok) {
         const data = await response.json()
         setNearbyCrags(data)
@@ -98,7 +87,7 @@ export default function CragSelector({
     } finally {
       setLoadingNearby(false)
     }
-  }, [hasGps, latitude, longitude])
+  }, [hasGps, region.id])
 
   useEffect(() => {
     if (hasGps && !showCreate) {
@@ -194,23 +183,6 @@ export default function CragSelector({
     onSelect(crag)
   }
 
-  const handleSelectNearby = (crag: NearbyCrag) => {
-    const fullCrag: Crag = {
-      id: crag.id,
-      name: crag.name,
-      latitude: crag.latitude,
-      longitude: crag.longitude,
-      region_id: null,
-      description: null,
-      access_notes: null,
-      rock_type: crag.rock_type,
-      type: crag.type as 'sport' | 'boulder' | 'trad' | 'mixed',
-      radius_meters: crag.radius_meters,
-      created_at: ''
-    }
-    handleSelect(fullCrag)
-  }
-
   const handleUseExisting = () => {
     if (existingMatch?.crag) {
       const crag: Crag = {
@@ -224,11 +196,20 @@ export default function CragSelector({
         rock_type: existingMatch.crag.rock_type,
         type: existingMatch.crag.type as 'sport' | 'boulder' | 'trad' | 'mixed',
         radius_meters: existingMatch.crag.radius_meters,
+        boundary: null,
         created_at: ''
       }
       handleSelect(crag)
     }
   }
+
+  const handleMarkerDrag = useCallback((e: L.LeafletEvent) => {
+    if (!leaflet) return
+    const marker = e.target as L.Marker
+    const position = marker.getLatLng()
+    setNewCragLat(position.lat.toFixed(6))
+    setNewCragLng(position.lng.toFixed(6))
+  }, [leaflet])
 
   const handleCreate = async () => {
     const nameToCreate = showCreate ? newCragName : query
@@ -239,6 +220,14 @@ export default function CragSelector({
 
     if (existingMatch?.exists) {
       setErrorMessage(existingMatch.message || 'A crag with this name exists nearby')
+      return
+    }
+
+    const lat = parseFloat(newCragLat) || latitude
+    const lng = parseFloat(newCragLng) || longitude
+
+    if (isNaN(lat) || isNaN(lng)) {
+      setErrorMessage('Valid GPS location is required')
       return
     }
 
@@ -256,17 +245,19 @@ export default function CragSelector({
           name: nameToCreate.trim(),
           region_id: region.id,
           rock_type: newCragRockType.trim() || null,
-          latitude: latitude,
-          longitude: longitude
+          latitude: lat,
+          longitude: lng
         }),
       })
 
       if (response.ok) {
         const newCrag = await response.json()
-        setSuccessMessage(`Crag "${newCrag.name}" created! Area will grow as more routes are tagged here.`)
+        setSuccessMessage(`Crag "${newCrag.name}" created!`)
         setShowCreate(false)
         setNewCragName('')
         setNewCragRockType('')
+        setNewCragLat('')
+        setNewCragLng('')
         setQuery(newCrag.name)
         onSelect(newCrag)
         onCreateNew?.(newCrag.name)
@@ -312,6 +303,8 @@ export default function CragSelector({
     setShowCreate(false)
     setNewCragName('')
     setNewCragRockType('')
+    setNewCragLat('')
+    setNewCragLng('')
     setErrorMessage('')
   }
 
@@ -320,6 +313,8 @@ export default function CragSelector({
     setErrorMessage('')
     setSuccessMessage('')
     setNewCragName(query)
+    setNewCragLat(hasGps ? latitude.toFixed(6) : '')
+    setNewCragLng(hasGps ? longitude.toFixed(6) : '')
     checkTagValidity(query)
   }
 
@@ -334,10 +329,23 @@ export default function CragSelector({
     }
   }
 
+  const handleSelectFromDropdown = (crag: Crag) => {
+    handleSelect(crag)
+    setResults([])
+    setQuery(crag.name)
+  }
+
+  const hasArea = nearbyCrags.length > 0
+
   return (
     <div className="crag-selector">
       <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
         Crags in <span className="font-medium text-gray-900 dark:text-gray-100">{region.name}</span>
+        {hasArea && (
+          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
+            {nearbyCrags.length} crag{nearbyCrags.length !== 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
       {successMessage && (
@@ -386,7 +394,7 @@ export default function CragSelector({
                       weight: 1
                     }}
                   />
-                  {nearbyCrags.filter(c => c.distance_km <= 10).slice(0, 20).map((crag) => (
+                  {nearbyCrags.slice(0, 20).map((crag) => (
                     <Marker
                       key={crag.id}
                       position={[crag.latitude, crag.longitude]}
@@ -407,30 +415,25 @@ export default function CragSelector({
 
           {loadingNearby ? (
             <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-              Loading nearby crags...
+              Loading crags...
             </div>
-          ) : nearbyCrags.length > 0 ? (
+          ) : hasArea ? (
             <div className="mt-2">
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                {nearbyCrags.length} crag{nearbyCrags.length !== 1 ? 's' : ''} within 10km
+                Select an existing crag:
               </p>
               <div className="max-h-40 overflow-y-auto space-y-1">
                 {nearbyCrags.map((crag) => (
                   <button
                     key={crag.id}
-                    onClick={() => handleSelectNearby(crag)}
+                    onClick={() => handleSelectFromDropdown(crag)}
                     className={`w-full text-left px-3 py-2 rounded text-sm ${
                       selectedCragId === crag.id
                         ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700 border border-transparent'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-900 dark:text-gray-100">{crag.name}</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {crag.distance_km.toFixed(1)} km
-                      </span>
-                    </div>
+                    <div className="font-medium text-gray-900 dark:text-gray-100">{crag.name}</div>
                     {crag.rock_type && (
                       <div className="text-xs text-gray-500 dark:text-gray-400">{crag.rock_type}</div>
                     )}
@@ -440,7 +443,7 @@ export default function CragSelector({
             </div>
           ) : (
             <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-              No crags found nearby - enter a name to create one!
+              No crags in this region - enter a name to create one!
             </div>
           )}
         </div>
@@ -479,10 +482,64 @@ export default function CragSelector({
             {!existingMatch?.exists && tagChecked && !checkingTag && (
               <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
                 <p className="text-sm text-green-700 dark:text-green-300">
-                  ✓ New crag - will be created at your location
+                  ✓ New crag - drag the pin to adjust location if needed
                 </p>
               </div>
             )}
+          </div>
+
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <div className="h-48">
+              <MapContainer
+                center={[parseFloat(newCragLat) || (hasGps ? latitude : 49.45), parseFloat(newCragLng) || (hasGps ? longitude : -2.58)]}
+                zoom={hasGps ? 14 : 12}
+                style={{ height: '100%', width: '100%' }}
+                dragging={true}
+                zoomControl={true}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                {leaflet && (
+                  <>
+                    {parseFloat(newCragLat) && parseFloat(newCragLng) && (
+                      <Marker
+                        position={[parseFloat(newCragLat), parseFloat(newCragLng)]}
+                        icon={leaflet.divIcon({
+                          className: 'crag-marker draggable',
+                          iconSize: [24, 24],
+                          iconAnchor: [12, 12]
+                        })}
+                        draggable={true}
+                        eventHandlers={{
+                          drag: handleMarkerDrag
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+              </MapContainer>
+            </div>
+            <div className="p-3 bg-gray-50 dark:bg-gray-800">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Drag the pin to adjust location</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={newCragLat}
+                  onChange={(e) => setNewCragLat(e.target.value)}
+                  placeholder="Latitude"
+                  className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+                <input
+                  type="text"
+                  value={newCragLng}
+                  onChange={(e) => setNewCragLng(e.target.value)}
+                  placeholder="Longitude"
+                  className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+            </div>
           </div>
 
           <input
@@ -566,7 +623,7 @@ export default function CragSelector({
                 {results.map((crag) => (
                   <li
                     key={crag.id}
-                    onClick={() => handleSelect(crag)}
+                    onClick={() => handleSelectFromDropdown(crag)}
                     className={`px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${
                       selectedCragId === crag.id ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                     }`}
@@ -612,6 +669,13 @@ export default function CragSelector({
           border: 2px solid white;
           border-radius: 50%;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .crag-marker.draggable {
+          cursor: grab;
+          background: #10b981;
+        }
+        .crag-marker.draggable:active {
+          cursor: grabbing;
         }
       `}</style>
     </div>
