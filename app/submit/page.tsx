@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import type { SubmissionStep, Region, Crag, ImageSelection, NewRouteData, SubmissionContext, GpsData } from '@/lib/submission-types'
@@ -18,8 +18,37 @@ export default function SubmitPage() {
     imageGps: null,
     routes: []
   })
+  const [preselectedRegion, setPreselectedRegion] = useState<Region | null>(null)
+  const [loadingRegion, setLoadingRegion] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (step.imageGps) {
+      setLoadingRegion(true)
+      fetch(`/api/regions/by-location?lat=${step.imageGps.latitude}&lng=${step.imageGps.longitude}`)
+        .then(res => {
+          if (res.ok) return res.json()
+          return null
+        })
+        .then(data => {
+          if (data) {
+            setPreselectedRegion({
+              id: data.id,
+              name: data.name,
+              country_code: data.country_code,
+              center_lat: data.center_lat,
+              center_lon: data.center_lon,
+              created_at: ''
+            })
+          }
+        })
+        .catch(err => console.error('Error finding region:', err))
+        .finally(() => setLoadingRegion(false))
+    } else {
+      setPreselectedRegion(null)
+    }
+  }, [step.imageGps])
 
   const handleImageSelect = useCallback((selection: ImageSelection, gpsData: GpsData | null) => {
     const gps = gpsData ? { latitude: gpsData.latitude, longitude: gpsData.longitude } : null
@@ -215,6 +244,8 @@ export default function SubmitPage() {
               onSelect={handleRegionSelect}
               initialLat={step.imageGps?.latitude ?? null}
               initialLng={step.imageGps?.longitude ?? null}
+              preselectedRegion={preselectedRegion}
+              loadingRegion={loadingRegion}
             />
           </div>
         )

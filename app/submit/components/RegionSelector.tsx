@@ -15,6 +15,8 @@ interface RegionSelectorProps {
   selectedRegionId?: string | null
   initialLat?: number | null
   initialLng?: number | null
+  preselectedRegion?: Region | null
+  loadingRegion?: boolean
 }
 
 export default function RegionSelector({
@@ -22,7 +24,9 @@ export default function RegionSelector({
   onCreateNew,
   selectedRegionId,
   initialLat,
-  initialLng
+  initialLng,
+  preselectedRegion,
+  loadingRegion = false
 }: RegionSelectorProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Region[]>([])
@@ -145,6 +149,13 @@ export default function RegionSelector({
     })
   }, [])
 
+  useEffect(() => {
+    if (preselectedRegion && !loadingRegion) {
+      setQuery(preselectedRegion.name)
+      onSelect(preselectedRegion)
+    }
+  }, [preselectedRegion, loadingRegion, onSelect])
+
   const handleShowCreate = () => {
     setShowCreate(true)
     setErrorMessage('')
@@ -158,6 +169,23 @@ export default function RegionSelector({
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
         Region
       </label>
+
+      {loadingRegion && hasGps && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg flex items-center gap-2">
+          <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            Finding region from GPS location...
+          </p>
+        </div>
+      )}
+
+      {hasGps && !loadingRegion && preselectedRegion && (
+        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <p className="text-sm text-green-700 dark:text-green-300">
+            ✓ Region detected: <strong>{preselectedRegion.name}</strong>
+          </p>
+        </div>
+      )}
 
       {hasGps && (
         <div className="mb-4 h-40 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
