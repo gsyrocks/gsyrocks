@@ -8,13 +8,14 @@ interface CreateCragRequest {
   type?: 'sport' | 'boulder' | 'trad' | 'mixed'
   description?: string
   access_notes?: string
-  boundary_vertices?: [number, number][]
+  latitude: number
+  longitude: number
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: CreateCragRequest = await request.json()
-    const { name, region_id, region_name, rock_type, type, description, access_notes, boundary_vertices } = body
+    const { name, region_id, region_name, rock_type, type, description, access_notes, latitude, longitude } = body
 
     if (!name) {
       return NextResponse.json(
@@ -23,9 +24,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!boundary_vertices || boundary_vertices.length < 3) {
+    if (latitude === undefined || longitude === undefined) {
       return NextResponse.json(
-        { error: 'A valid crag boundary (at least 3 points) is required' },
+        { error: 'GPS coordinates are required' },
         { status: 400 }
       )
     }
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
 
     let resolvedRegionId = region_id
 
+    // Resolve region by name if needed
     if (!resolvedRegionId && region_name) {
       const regionSearchResponse = await fetch(
         `${supabaseUrl}/rest/v1/regions?select=id,name&name=ilike.${encodeURIComponent(region_name)}&limit=1`,
@@ -71,8 +73,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const checkNameResponse = await fetch(
-      `${supabaseUrl}/rest/v1/crags?select=id,name&name=ilike.${encodeURIComponent(name)}&limit=1`,
+    // Check for nearby crag with same name (within 200m)
+    const checkNearbyResponse = await fetch(
+      `${supabaseUrl}/rest/v1/crags?select=id,name,latitude,longitude&name=ilike.${encodeURIComponent(name)}&limit=10`,
       {
         headers: {
           'Authorization': `Bearer ${supabaseKey}`,
@@ -81,23 +84,37 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    if (checkNameResponse.ok) {
-      const existingCrags = await checkNameResponse.json()
-      if (existingCrags.length > 0) {
-        return NextResponse.json(
-          { 
-            error: `A crag with this name already exists: "${existingCrags[0].name}"`,
-            existingCragId: existingCrags[0].id,
-            existingCragName: existingCrags[0].name,
-            code: 'DUPLICATE_NAME'
-          },
-          { status: 409 }
+    if (checkNearbyResponse.ok) {
+      const nearbyCrags = await checkNearbyResponse.json()
+      for (const crag of nearbyCrags) {
+        const distance = Math.sqrt(
+          Math.pow((crag.latitude - latitude) * 111320, 2) +
+          Math.pow((crag.longitude - longitude) * 111320 * Math.cos(latitude * Math.PI / 180), 2)
         )
+        if (distance < 200 && resolvedRegionId === crag.region_id) {
+          return NextResponse.json(
+            {
+              error: `A crag with this name already exists nearby (${Math.round(distance)}m): "${crag.name}"`,
+              existingCragId: crag.id,
+              existingCragName: crag.name,
+              distanceMeters: Math.round(distance),
+              code: 'DUPLICATE_NEARBY'
+            },
+            { status: 409 }
+          )
+        }
       }
     }
 
-    const centerLat = boundary_vertices.reduce((sum, v) => sum + v[0], 0) / boundary_vertices.length
-    const centerLng = boundary_vertices.reduce((sum, v) => sum + v[1], 0) / boundary_vertices.length
+    // Create 5m circle polygon around point using PostGIS
+    const polygonWKT = `POLYGON((${
+      Array.from({ length: 9 }, (_, i) => {
+        const angle = (i / 8) * 2 * Math.PI
+        const dx = 5 * Math.cos(angle) / 111320 / Math.cos(latitude * Math.PI / 180)
+        const dy = 5 * Math.sin(angle) / 111320
+        return `${longitude + dx} ${latitude + dy}`
+      }).join(', ')
+    }, ${longitude} ${latitude}))`
 
     const response = await fetch(
       `${supabaseUrl}/rest/v1/crags`,
@@ -111,14 +128,15 @@ export async function POST(request: NextRequest) {
         },
         body: JSON.stringify({
           name,
-          latitude: centerLat,
-          longitude: centerLng,
+          latitude,
+          longitude,
           region_id: resolvedRegionId || undefined,
           rock_type: rock_type || undefined,
           type: type || 'sport',
           description: description || undefined,
           access_notes: access_notes || undefined,
-          boundary: `POLYGON((${boundary_vertices.map(v => `${v[1]} ${v[0]}`).join(', ')}))`
+          boundary: polygonWKT,
+          radius_meters: 5
         }),
       }
     )
@@ -154,12 +172,12 @@ export async function POST(request: NextRequest) {
     const createdCrag = {
       id: createdCragId,
       name,
-      latitude: centerLat,
-      longitude: centerLng,
+      latitude,
+      longitude,
       region_id: resolvedRegionId || null,
       rock_type: rock_type || null,
       type: type || 'sport',
-      boundary: boundary_vertices,
+      radius_meters: 5,
       created_at: new Date().toISOString(),
     }
 

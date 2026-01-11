@@ -4,13 +4,11 @@ import { useState, useEffect, useCallback } from 'react'
 import dynamic from 'next/dynamic'
 import 'leaflet/dist/leaflet.css'
 import type { Crag, Region } from '@/lib/submission-types'
-import CragAreaEditor from './CragAreaEditor'
 
 const MapContainer = dynamic(() => import('react-leaflet').then(mod => mod.MapContainer), { ssr: false })
 const TileLayer = dynamic(() => import('react-leaflet').then(mod => mod.TileLayer), { ssr: false })
 const Marker = dynamic(() => import('react-leaflet').then(mod => mod.Marker), { ssr: false })
 const Circle = dynamic(() => import('react-leaflet').then(mod => mod.Circle), { ssr: false })
-const Polygon = dynamic(() => import('react-leaflet').then(mod => mod.Polygon), { ssr: false })
 
 interface NearbyCrag {
   id: string
@@ -20,8 +18,23 @@ interface NearbyCrag {
   rock_type: string | null
   type: string
   distance_km: number
-  contains_point: boolean
+  radius_meters: number
   boundary: GeoJSON.Polygon | null
+}
+
+interface ExistingCragMatch {
+  exists: boolean
+  crag: {
+    id: string
+    name: string
+    latitude: number
+    longitude: number
+    rock_type: string | null
+    type: string
+    radius_meters: number
+    distanceMeters: number
+  }
+  message?: string
 }
 
 interface CragSelectorProps {
@@ -47,14 +60,15 @@ export default function CragSelector({
   const [showCreate, setShowCreate] = useState(false)
   const [newCragName, setNewCragName] = useState('')
   const [newCragRockType, setNewCragRockType] = useState('')
-  const [boundaryVertices, setBoundaryVertices] = useState<[number, number][]>([])
   const [isCreating, setIsCreating] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
-  const [showAreaEditor, setShowAreaEditor] = useState(false)
   const [nearbyCrags, setNearbyCrags] = useState<NearbyCrag[]>([])
   const [loadingNearby, setLoadingNearby] = useState(false)
   const [leaflet, setLeaflet] = useState<typeof import('leaflet') | null>(null)
+  const [existingMatch, setExistingMatch] = useState<ExistingCragMatch | null>(null)
+  const [checkingTag, setCheckingTag] = useState(false)
+  const [tagChecked, setTagChecked] = useState(false)
 
   useEffect(() => {
     import('leaflet').then(L => {
@@ -133,6 +147,45 @@ export default function CragSelector({
     return () => clearTimeout(timer)
   }, [query, searchCrags])
 
+  const checkTagValidity = useCallback(async (tagName: string) => {
+    if (!hasGps || !tagName || tagName.length < 2) {
+      setExistingMatch(null)
+      setTagChecked(true)
+      return
+    }
+
+    setCheckingTag(true)
+    setTagChecked(false)
+    try {
+      const params = new URLSearchParams({
+        name: tagName,
+        region_id: region.id,
+        lat: latitude.toString(),
+        lng: longitude.toString()
+      })
+      const response = await fetch(`/api/crags/check-tag?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setExistingMatch(data)
+      } else {
+        setExistingMatch(null)
+      }
+    } catch (error) {
+      console.error('Error checking tag:', error)
+      setExistingMatch(null)
+    } finally {
+      setCheckingTag(false)
+      setTagChecked(true)
+    }
+  }, [hasGps, latitude, longitude, region.id])
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value)
+    setExistingMatch(null)
+    setTagChecked(false)
+    checkTagValidity(value)
+  }
+
   const handleSelect = (crag: Crag) => {
     setQuery(crag.name)
     setResults([])
@@ -152,20 +205,40 @@ export default function CragSelector({
       access_notes: null,
       rock_type: crag.rock_type,
       type: crag.type as 'sport' | 'boulder' | 'trad' | 'mixed',
-      boundary: crag.boundary,
+      radius_meters: crag.radius_meters,
       created_at: ''
     }
     handleSelect(fullCrag)
   }
 
+  const handleUseExisting = () => {
+    if (existingMatch?.crag) {
+      const crag: Crag = {
+        id: existingMatch.crag.id,
+        name: existingMatch.crag.name,
+        latitude: existingMatch.crag.latitude,
+        longitude: existingMatch.crag.longitude,
+        region_id: region.id,
+        description: null,
+        access_notes: null,
+        rock_type: existingMatch.crag.rock_type,
+        type: existingMatch.crag.type as 'sport' | 'boulder' | 'trad' | 'mixed',
+        radius_meters: existingMatch.crag.radius_meters,
+        created_at: ''
+      }
+      handleSelect(crag)
+    }
+  }
+
   const handleCreate = async () => {
-    if (!newCragName.trim()) {
+    const nameToCreate = showCreate ? newCragName : query
+    if (!nameToCreate.trim()) {
       setErrorMessage('Crag name is required')
       return
     }
 
-    if (boundaryVertices.length < 3) {
-      setErrorMessage('Please draw a crag area (at least 3 points)')
+    if (existingMatch?.exists) {
+      setErrorMessage(existingMatch.message || 'A crag with this name exists nearby')
       return
     }
 
@@ -180,45 +253,45 @@ export default function CragSelector({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: newCragName.trim(),
+          name: nameToCreate.trim(),
           region_id: region.id,
           rock_type: newCragRockType.trim() || null,
-          boundary_vertices: boundaryVertices
+          latitude: latitude,
+          longitude: longitude
         }),
       })
 
       if (response.ok) {
         const newCrag = await response.json()
-        setSuccessMessage(`Crag "${newCrag.name}" created successfully!`)
+        setSuccessMessage(`Crag "${newCrag.name}" created! Area will grow as more routes are tagged here.`)
         setShowCreate(false)
         setNewCragName('')
         setNewCragRockType('')
-        setBoundaryVertices([])
         setQuery(newCrag.name)
         onSelect(newCrag)
         onCreateNew?.(newCrag.name)
         setResults([newCrag])
-        setTimeout(() => setSuccessMessage(''), 3000)
+        setExistingMatch(null)
+        setTagChecked(false)
+        setTimeout(() => setSuccessMessage(''), 5000)
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Failed to create crag' }))
         
-        if (errorData.code === 'DUPLICATE' && errorData.existingCragId) {
+        if (errorData.code === 'DUPLICATE_NEARBY' && errorData.existingCragId) {
           setErrorMessage(errorData.error)
           setTimeout(() => {
             setShowCreate(false)
             setNewCragName('')
             setNewCragRockType('')
-            setBoundaryVertices([])
             setQuery(errorData.existingCragName)
             searchCrags(errorData.existingCragName)
           }, 2000)
-        } else if (errorData.code === 'DUPLICATE_NAME' && errorData.existingCragId) {
+        } else if (errorData.code === 'DUPLICATE' && errorData.existingCragId) {
           setErrorMessage(errorData.error)
           setTimeout(() => {
             setShowCreate(false)
             setNewCragName('')
             setNewCragRockType('')
-            setBoundaryVertices([])
             setQuery(errorData.existingCragName)
             searchCrags(errorData.existingCragName)
           }, 2000)
@@ -239,7 +312,6 @@ export default function CragSelector({
     setShowCreate(false)
     setNewCragName('')
     setNewCragRockType('')
-    setBoundaryVertices([])
     setErrorMessage('')
   }
 
@@ -247,23 +319,20 @@ export default function CragSelector({
     setShowCreate(true)
     setErrorMessage('')
     setSuccessMessage('')
+    setNewCragName(query)
+    checkTagValidity(query)
   }
 
-  const handleAreaSave = (vertices: [number, number][]) => {
-    setBoundaryVertices(vertices)
-    setShowAreaEditor(false)
+  const handleEnterPressed = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (existingMatch?.exists) {
+        handleUseExisting()
+      } else if (query.trim() && tagChecked && !checkingTag) {
+        handleCreate()
+      }
+    }
   }
-
-  const handleClearArea = () => {
-    setBoundaryVertices([])
-  }
-
-  const getBoundaryPolygon = () => {
-    if (boundaryVertices.length < 3) return []
-    return [boundaryVertices] as [number, number][]
-  }
-
-  const hasArea = boundaryVertices.length >= 3
 
   return (
     <div className="crag-selector">
@@ -317,20 +386,17 @@ export default function CragSelector({
                       weight: 1
                     }}
                   />
-                  {nearbyCrags.filter(c => c.distance_km <= 10).slice(0, 20).map((crag) => {
-                    const hasBoundary = crag.boundary !== null
-                    return (
-                      <Marker
-                        key={crag.id}
-                        position={[crag.latitude, crag.longitude]}
-                        icon={leaflet.divIcon({
-                          className: hasBoundary ? 'area-marker' : 'crag-marker',
-                          iconSize: hasBoundary ? [24, 24] : [12, 12],
-                          iconAnchor: hasBoundary ? [12, 12] : [6, 6]
-                        })}
-                      />
-                    )
-                  })}
+                  {nearbyCrags.filter(c => c.distance_km <= 10).slice(0, 20).map((crag) => (
+                    <Marker
+                      key={crag.id}
+                      position={[crag.latitude, crag.longitude]}
+                      icon={leaflet.divIcon({
+                        className: 'crag-marker',
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6]
+                      })}
+                    />
+                  ))}
                 </>
               )}
             </MapContainer>
@@ -361,17 +427,9 @@ export default function CragSelector({
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-gray-900 dark:text-gray-100">{crag.name}</span>
-                      <div className="flex items-center gap-1">
-                        {crag.boundary && (
-                          <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1.5 rounded">
-                            Area
-                          </span>
-                        )}
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {crag.distance_km.toFixed(1)} km
-                          {crag.contains_point && ' ✓'}
-                        </span>
-                      </div>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {crag.distance_km.toFixed(1)} km
+                      </span>
                     </div>
                     {crag.rock_type && (
                       <div className="text-xs text-gray-500 dark:text-gray-400">{crag.rock_type}</div>
@@ -382,7 +440,7 @@ export default function CragSelector({
             </div>
           ) : (
             <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-              No crags found nearby - create one!
+              No crags found nearby - enter a name to create one!
             </div>
           )}
         </div>
@@ -390,85 +448,41 @@ export default function CragSelector({
 
       {showCreate ? (
         <div className="space-y-4">
-          <input
-            type="text"
-            value={newCragName}
-            onChange={(e) => setNewCragName(e.target.value)}
-            placeholder="Enter crag name"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            autoFocus
-          />
-
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            <div className="h-48">
-              <MapContainer
-                center={hasGps ? [latitude, longitude] : [49.45, -2.58]}
-                zoom={hasGps ? 14 : 10}
-                style={{ height: '100%', width: '100%' }}
-                dragging={true}
-                zoomControl={true}
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                {leaflet && hasGps && (
-                  <Marker
-                    position={[latitude, longitude]}
-                    icon={leaflet.divIcon({
-                      className: 'gps-marker-small',
-                      iconSize: [12, 12],
-                      iconAnchor: [6, 6]
-                    })}
-                  />
-                )}
-                {leaflet && hasArea && (
-                  <Polygon
-                    positions={getBoundaryPolygon()}
-                    pathOptions={{
-                      color: '#10b981',
-                      fillColor: '#10b981',
-                      fillOpacity: 0.2,
-                      weight: 2
-                    }}
-                  />
-                )}
-                {leaflet && boundaryVertices.map((v, i) => (
-                  <Marker
-                    key={i}
-                    position={v}
-                    icon={leaflet.divIcon({
-                      className: 'vertex-marker',
-                      iconSize: [14, 14],
-                      iconAnchor: [7, 7]
-                    })}
-                  />
-                ))}
-              </MapContainer>
-            </div>
-            <div className="p-3 bg-gray-50 dark:bg-gray-800">
-              {hasArea ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-green-600 dark:text-green-400">
-                    ✓ Area drawn ({boundaryVertices.length} points)
-                  </span>
-                  <button
-                    onClick={handleClearArea}
-                    className="text-sm text-red-600 hover:text-red-800"
-                  >
-                    Clear
-                  </button>
-                </div>
-              ) : (
+          <div>
+            <input
+              type="text"
+              value={newCragName}
+              onChange={(e) => {
+                setNewCragName(e.target.value)
+                checkTagValidity(e.target.value)
+              }}
+              placeholder="Enter crag name"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            {checkingTag && (
+              <div className="mt-1 text-sm text-gray-500">Checking if crag exists nearby...</div>
+            )}
+            {existingMatch?.exists && (
+              <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                <p className="text-sm text-red-700 dark:text-red-300 mb-2">
+                  ⚠️ {existingMatch.message}
+                </p>
                 <button
-                  onClick={() => setShowAreaEditor(true)}
-                  className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                  onClick={handleUseExisting}
+                  className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                 >
-                  <span>✏️</span>
-                  Draw Crag Area
+                  Use existing &quot;{existingMatch.crag.name}&quot; instead
                 </button>
-              )}
-            </div>
+              </div>
+            )}
+            {!existingMatch?.exists && tagChecked && !checkingTag && (
+              <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  ✓ New crag - will be created at your location
+                </p>
+              </div>
+            )}
           </div>
 
           <input
@@ -481,7 +495,7 @@ export default function CragSelector({
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
-              disabled={!newCragName.trim() || !hasArea || isCreating}
+              disabled={!newCragName.trim() || isCreating || checkingTag || existingMatch?.exists}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isCreating && (
@@ -504,18 +518,42 @@ export default function CragSelector({
             <input
               type="text"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setResults([])
-                setSuccessMessage('')
-                setErrorMessage('')
-              }}
-              placeholder="Search for a crag..."
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={handleEnterPressed}
+              placeholder="Search or enter crag name..."
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
               onFocus={() => {
                 if (query.length >= 2) searchCrags(query)
               }}
             />
+
+            {checkingTag && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+              </div>
+            )}
+
+            {existingMatch?.exists && !showCreate && (
+              <div className="absolute z-10 w-full mt-1 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                <p className="text-sm text-red-700 dark:text-red-300 mb-2">
+                  ⚠️ {existingMatch.message}
+                </p>
+                <button
+                  onClick={handleUseExisting}
+                  className="w-full py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                >
+                  Use existing crag
+                </button>
+              </div>
+            )}
+
+            {!existingMatch?.exists && tagChecked && query.length >= 2 && !checkingTag && (
+              <div className="absolute z-10 w-full mt-1 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  Press Enter to create &quot;{query}&quot;
+                </p>
+              </div>
+            )}
 
             {loading && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -546,9 +584,9 @@ export default function CragSelector({
               </ul>
             )}
 
-            {query.length >= 2 && !loading && results.length === 0 && !successMessage && (
+            {query.length >= 2 && !loading && results.length === 0 && !existingMatch?.exists && tagChecked && (
               <div className="absolute z-10 w-full mt-1 p-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg text-sm text-gray-500 dark:text-gray-400 text-center">
-                No crags found matching &quot;{query}&quot;
+                No crags found - press Enter to create
               </div>
             )}
           </div>
@@ -562,16 +600,6 @@ export default function CragSelector({
         </>
       )}
 
-      {showAreaEditor && (
-        <CragAreaEditor
-          initialLat={hasGps ? latitude : null}
-          initialLng={hasGps ? longitude : null}
-          initialVertices={boundaryVertices}
-          onSave={handleAreaSave}
-          onClose={() => setShowAreaEditor(false)}
-        />
-      )}
-
       <style jsx global>{`
         .gps-marker {
           background: #3b82f6;
@@ -579,26 +607,8 @@ export default function CragSelector({
           border-radius: 50%;
           box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
-        .gps-marker-small {
-          background: #3b82f6;
-          border: 2px solid white;
-          border-radius: 50%;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
         .crag-marker {
           background: #ef4444;
-          border: 2px solid white;
-          border-radius: 50%;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .area-marker {
-          background: #10b981;
-          border: 2px solid white;
-          border-radius: 4px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .vertex-marker {
-          background: #10b981;
           border: 2px solid white;
           border-radius: 50%;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
