@@ -16,10 +16,19 @@ export async function GET(request: NextRequest) {
   )
 
   try {
-    const { data, error } = await supabase
+    const { searchParams } = new URL(request.url)
+    const q = searchParams.get('q')
+
+    let query = supabase
       .from('regions')
       .select('id, name, country_code, center_lat, center_lon, created_at')
       .order('name', { ascending: true })
+
+    if (q && q.length >= 2) {
+      query = query.ilike('name', `%${q}%`)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error('Error fetching regions:', error)

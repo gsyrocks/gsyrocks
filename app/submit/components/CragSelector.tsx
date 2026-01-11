@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { Crag, Region } from '@/lib/submission-types'
+import LocationPickerModal from './LocationPickerModal'
 
 interface CragSelectorProps {
   region: Region
@@ -31,6 +32,7 @@ export default function CragSelector({
   const [isCreating, setIsCreating] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   const searchCrags = useCallback(async (searchQuery: string) => {
     if (searchQuery.length < 2) {
@@ -207,7 +209,7 @@ export default function CragSelector({
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoFocus
           />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
             <input
               type="text"
               value={newCragLat}
@@ -222,6 +224,14 @@ export default function CragSelector({
               placeholder="Longitude"
               className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <button
+              type="button"
+              onClick={() => setShowLocationPicker(true)}
+              className="px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
+              title="Select from map"
+            >
+              📍
+            </button>
           </div>
           <input
             type="text"
@@ -312,6 +322,19 @@ export default function CragSelector({
             + Create new crag
           </button>
         </>
+      )}
+
+      {showLocationPicker && (
+        <LocationPickerModal
+          initialLat={parseFloat(newCragLat) || null}
+          initialLng={parseFloat(newCragLng) || null}
+          onSelect={(lat, lng) => {
+            setNewCragLat(lat.toFixed(6))
+            setNewCragLng(lng.toFixed(6))
+            setShowLocationPicker(false)
+          }}
+          onClose={() => setShowLocationPicker(false)}
+        />
       )}
     </div>
   )
