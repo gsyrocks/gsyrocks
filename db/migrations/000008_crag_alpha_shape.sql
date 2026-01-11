@@ -1,6 +1,14 @@
 -- Migration: Alpha Shape Crag Boundaries
 -- Run after enabling PostGIS
 
+-- Drop existing functions if they exist
+DROP FUNCTION IF EXISTS create_crag_polygon(jsonb, float, float);
+DROP FUNCTION IF EXISTS expand_crag_polygon(uuid, float, float, float, float);
+DROP FUNCTION IF EXISTS find_crag_by_point(float, float, float);
+DROP FUNCTION IF EXISTS is_point_in_crag(uuid, float, float);
+DROP FUNCTION IF EXISTS get_crag_points(uuid);
+DROP FUNCTION IF EXISTS add_crag_point(uuid, float, float, text, uuid, float, float);
+
 -- Function: Create crag polygon from GPS points
 -- 1-2 points: circle
 -- 3+ points: alpha shape polygon
@@ -50,7 +58,7 @@ BEGIN
       ) INTO result;
     
   ELSE
-    -- 3+ points: alpha shape
+    -- 3+ points: convex hull (simplified alpha shape)
     -- Create multipoint from all GPS coordinates
     SELECT ST_Union(ARRAY(
       SELECT ST_SetSRID(ST_MakePoint(
@@ -60,23 +68,17 @@ BEGIN
       FROM JSONB_ARRAY_ELEMS(points) WITH ORDINALITY AS arr(p, idx)
     )) INTO multipoint;
     
-    -- Create Delaunay triangulation, then alpha shape
+    -- Create convex hull with buffer
     BEGIN
       result := ST_Buffer(
-        ST_MakePolygon(
-          ST_ExteriorRing(
-            ST_ConvexHull(
-              ST_DelaunayTriangles(multipoint, 0, 'SWEEPEVENT()')
-            )
-          )
-        ),
+        ST_ConvexHull(multipoint),
         buffer_meters,
         'quad_segs=8'
       );
     EXCEPTION WHEN OTHERS THEN
-      -- Fallback to convex hull if alpha shape fails
+      -- Fallback to simple buffer if convex hull fails
       result := ST_Buffer(
-        ST_ConvexHull(multipoint),
+        multipoint,
         buffer_meters,
         'quad_segs=8'
       );
@@ -106,23 +108,20 @@ DECLARE
   new_lat_center float;
   new_lng_center float;
 BEGIN
-  -- Get current crag points (from route_images or crag_points table)
-  -- For now, we'll aggregate from route_images that reference this crag
+  -- Get current crag points (from crag_points table)
   SELECT COALESCE(
     JSONB_AGG(
-      JSONB_BUILD_ARRAY(r.latitude, r.longitude)
-      ORDER BY r.created_at
+      JSONB_BUILD_ARRAY(latitude, longitude)
+      ORDER BY created_at
     ),
     '[]'::jsonb
   ) INTO current_points
-  FROM route_images r
-  WHERE r.crag_id = crag_id
-    AND r.latitude IS NOT NULL
-    AND r.longitude IS NOT NULL;
+  FROM crag_points
+  WHERE crag_id = expand_crag_polygon.crag_id;
   
   -- Add new point
   new_point := JSONB_BUILD_ARRAY(new_lat, new_lng);
-  all_points := current_point || new_point;
+  all_points := current_points || new_point;
   
   -- Create new polygon
   SELECT create_crag_polygon(all_points, alpha, buffer_meters)
@@ -213,22 +212,6 @@ BEGIN
   );
 END;
 $$;
-
--- Add crag_points table to track individual GPS points per crag
-CREATE TABLE IF NOT EXISTS crag_points (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  crag_id uuid NOT NULL REFERENCES crags(id) ON DELETE CASCADE,
-  latitude float NOT NULL,
-  longitude float NOT NULL,
-  source_type text DEFAULT 'route_image',
-  source_id uuid,
-  created_at timestamptz DEFAULT NOW(),
-  UNIQUE(source_type, source_id)
-);
-
--- Index for fast lookups
-CREATE INDEX IF NOT EXISTS idx_crag_points_crag_id ON crag_points(crag_id);
-CREATE INDEX IF NOT EXISTS idx_crag_points_location ON crag_points USING GIST(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326));
 
 -- Function to get all points for a crag
 CREATE OR REPLACE FUNCTION get_crag_points(crag_id uuid)

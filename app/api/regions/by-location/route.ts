@@ -1,19 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 
 export async function GET(request: NextRequest) {
-  const cookies = request.cookies
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return cookies.getAll() },
-        setAll() {},
-      },
-    }
-  )
-
   const { searchParams } = new URL(request.url)
   const lat = searchParams.get('lat')
   const lng = searchParams.get('lng')
@@ -36,27 +23,67 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { data, error } = await supabase.rpc('find_region_by_location', {
-      search_lat: latitude,
-      search_lng: longitude
-    })
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-    if (error) {
-      console.error('Supabase RPC error:', error)
+    // Direct SQL query to find nearest region
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/regions?select=id,name,country_code,center_lat,center_lon&center_lat=not.is.null&center_lon=not.is.null&order=center_lat.asc.nullsfirst&limit=100`,
+      {
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+        },
+      }
+    )
+
+    if (!response.ok) {
       return NextResponse.json(
-        { error: 'Failed to find region' },
+        { error: 'Failed to fetch regions' },
         { status: 500 }
       )
     }
 
-    if (!data || data.length === 0) {
+    const regions = await response.json()
+
+    if (!regions || regions.length === 0) {
+      return NextResponse.json(
+        { error: 'No regions found' },
+        { status: 404 }
+      )
+    }
+
+    // Find nearest region
+    let nearestRegion = null
+    let minDistance = Infinity
+
+    for (const region of regions) {
+      if (region.center_lat && region.center_lon) {
+        const distance = Math.sqrt(
+          Math.pow((region.center_lat - latitude) * 111320, 2) +
+          Math.pow((region.center_lon - longitude) * 111320 * Math.cos(latitude * Math.PI / 180), 2)
+        )
+        if (distance < minDistance) {
+          minDistance = distance
+          nearestRegion = region
+        }
+      }
+    }
+
+    if (!nearestRegion) {
       return NextResponse.json(
         { error: 'No region found for this location' },
         { status: 404 }
       )
     }
 
-    return NextResponse.json(data[0])
+    return NextResponse.json({
+      id: nearestRegion.id,
+      name: nearestRegion.name,
+      country_code: nearestRegion.country_code,
+      center_lat: nearestRegion.center_lat,
+      center_lon: nearestRegion.center_lon
+    })
   } catch (error) {
     console.error('Error finding region:', error)
     return NextResponse.json(
